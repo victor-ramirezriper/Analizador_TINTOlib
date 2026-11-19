@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+*.log
+.DS_Store
+Datos_Analisis_Interactivo/
+Exportaciones_JPG/
+.streamlit/secrets.toml
