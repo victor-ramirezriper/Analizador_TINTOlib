@@ -2,6 +2,14 @@
 
 Aplicación de análisis de resultados experimentales TINTOlib. Conserva los paneles de **Líneas, Ganadores, Anomalías, Relaciones, Costo-beneficio y Comparador y auditoría**.
 
+## Datos de ejemplo automáticos (opcional)
+
+La aplicación incluye dos modos de carga: **Datos de ejemplo (automáticos)** (seleccionado al abrir) y **Cargar mis resultados (carpeta CSV)**. El primero lee directamente `demo/Local_ejemplo.zip` desde el repositorio, sin extraerlo a disco; el segundo conserva la selección manual de carpetas.
+
+El ZIP público puede contener la estructura `Local/Maestros`, `Local/Datasets` y `Local/Auditoria`. Solo se utilizan los seis CSV reconocidos por `analisis_core.py`; los dos obligatorios son `Resultados_Globales_Por_Modelo.csv` y `Tabla_Datasets.csv`. El archivo demostrativo actual contiene resultados provisionales de 28 conjuntos de datos y se podrá reemplazar cuando la evaluación definitiva esté lista.
+
+**Aviso de publicación:** los CSV incluidos en `demo/Local_ejemplo.zip` serán públicos en GitHub y podrán ser descargados por cualquier visitante. No incluyas información privada, etiquetas individuales sensibles ni credenciales. La carga manual de visitantes sigue siendo independiente y no modifica los archivos públicos del repositorio.
+
 ## Carga de resultados desde el navegador
 
 1. Ejecuta el exportador de datos del proyecto para obtener la carpeta `Datos_Analisis_Interactivo`.
@@ -26,7 +34,7 @@ Si se selecciona una carpeta con `Local` y `Colab` al mismo tiempo, se usa **Loc
 
 **Importante:** el analizador no trabaja directamente con los `Baseline_*_FOLDS.csv` ni con los directorios de modelos sin procesar; primero hay que generar los CSV maestros mediante el exportador. Los resultados de un único fold/holdout son válidos y no se marcan como incompletos únicamente por contener un fold. Su desviación estándar entre folds puede ser `NaN`.
 
-Los archivos se leen en memoria en la sesión del navegador y **no se incluyen en el repositorio GitHub**. Evita subir datasets confidenciales a un servicio público sin autorización. Las descargas JPG/CSV se realizan desde la interfaz y no se guardan de forma permanente en el servidor.
+Los CSV cargados manualmente se leen en memoria durante la sesión y **no se incluyen en el repositorio GitHub**; únicamente los CSV que el propietario publique intencionalmente en `demo/Local_ejemplo.zip` serán públicos. Evita subir datasets confidenciales a un servicio público sin autorización. Las descargas JPG/CSV se realizan desde la interfaz y no se guardan de forma permanente en el servidor.
 
 ## Ejecutar localmente
 
@@ -45,7 +53,7 @@ python -m streamlit run app.py
 4. En la configuración avanzada, selecciona **Python 3.12** (si está disponible) y despliega la aplicación.
 5. Comparte la URL pública `.streamlit.app`. Los visitantes podrán subir sus propias carpetas desde el navegador.
 
-La carpeta `.streamlit` debe subirse, aunque empieza con punto. No subas datos experimentales ni credenciales al repositorio.
+La carpeta `.streamlit` debe subirse, aunque empieza con punto. Publica únicamente resultados de ejemplo aprobados para difusión en `demo/Local_ejemplo.zip`; no subas datos sensibles ni credenciales.
 
 ## Dependencias
 

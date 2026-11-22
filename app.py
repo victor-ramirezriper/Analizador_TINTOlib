@@ -3,6 +3,7 @@
 from __future__ import annotations
 import os
 import io
+from zipfile import ZipFile
 from pathlib import Path
 from datetime import datetime
 import numpy as np
@@ -13,9 +14,53 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 from analisis_core import (cargar, preparar_archivos_subidos, serie_lineas, ordenar, seleccionar_mejores,
     tabla_victorias, alertas, frontera_pareto, calidad, MODELOS_BASE, METODOS,
-    ARQUITECTURAS, METRICAS, MAYOR_MEJOR)
+    ARQUITECTURAS, METRICAS, MAYOR_MEJOR, ARCHIVOS_ANALISIS, OBLIGATORIOS)
 
 ROOT=Path(__file__).resolve().parent
+
+# ZIP publico de ejemplo. Los CSV de usuarios siguen siendo independientes.
+DEMO_ZIP = ROOT / 'demo' / 'Local_ejemplo.zip'
+MAX_CSV_BYTES = 80 * 1024 * 1024
+
+
+@st.cache_data(show_spinner='Cargando los resultados de ejemplo...')
+def cargar_ejemplo_zip(ruta_zip: str, version_archivo: int):
+    """Lee solo los CSV requeridos del ZIP incluido, sin extraerlo a disco.
+
+    version_archivo invalida la cache cuando se reemplaza el ZIP.
+    """
+    del version_archivo  # Se utiliza en la clave de cache.
+    grupos = {'local': {}, 'directo': {}, 'colab': {}}
+    total_bytes = 0
+
+    with ZipFile(ruta_zip, 'r') as archivo_zip:
+        for entrada in archivo_zip.infolist():
+            if entrada.is_dir():
+                continue
+            nombre = entrada.filename.replace('\\', '/')
+            partes = [parte for parte in nombre.split('/') if parte and parte != '.']
+            if '..' in partes or len(partes) < 2:
+                continue
+            ruta_rel = '/'.join(partes[-2:])
+            ruta_can = next((r for r in ARCHIVOS_ANALISIS if r.casefold() == ruta_rel.casefold()), None)
+            if ruta_can is None:
+                continue
+            prefijo = [p.casefold() for p in partes[:-2]]
+            grupo = 'local' if 'local' in prefijo else 'colab' if 'colab' in prefijo else 'directo'
+            if ruta_can in grupos[grupo]:
+                raise ValueError(f'CSV duplicado en el ZIP de ejemplo: {ruta_can}')
+            if entrada.file_size > MAX_CSV_BYTES or total_bytes + entrada.file_size > MAX_CSV_BYTES:
+                raise ValueError('Los CSV del ZIP de ejemplo superan el limite de 80 MB.')
+            total_bytes += entrada.file_size
+            grupos[grupo][ruta_can] = archivo_zip.read(entrada)
+
+    elegido = next((g for g in ('local', 'directo', 'colab') if OBLIGATORIOS.issubset(grupos[g])), None)
+    if elegido is None:
+        raise ValueError('El ZIP de ejemplo no contiene Maestros/Resultados_Globales_Por_Modelo.csv y Datasets/Tabla_Datasets.csv.')
+    archivos = grupos[elegido]
+    frames = cargar(archivos)
+    return (*frames, len(archivos), sum(len(b) for b in archivos.values()) / (1024 ** 2))
+
 
 COLORS=['#66D9E8','#A6E36A','#F7B86B','#B8A0FF','#FF799B','#5DB8FF','#E3CE79','#69CBB3','#D69CEC','#E99976','#99C7F2','#F2A6C4','#B4DD8D','#CBBAD7']
 BG='#101114'; PANEL='#181A20'; INK='#F4F4F6'; MUTED='#A7A8AC'
@@ -158,28 +203,51 @@ def write_download(datos, nombre):
 st.title('TINTOlib  /  Análisis experimental')
 st.caption('Resultados tabulares y representaciones visuales · Exploración y diagnóstico')
 st.markdown('**Cargar resultados experimentales**')
-st.caption('Selecciona la carpeta producida por el exportador. Debe contener Maestros/Resultados_Globales_Por_Modelo.csv y Datasets/Tabla_Datasets.csv. Se admiten las subcarpetas Maestros, Datasets y Auditoria.')
-archivos_usuario = st.file_uploader(
-    'Carpeta de resultados CSV', type=['csv'], accept_multiple_files='directory',
-    help='Puedes seleccionar Local o Datos_Analisis_Interactivo. Si contiene Local y Colab, se prioriza Local.',
-    key='carga_carpeta'
+st.caption('Explora los datos de ejemplo incluidos o carga tu propia carpeta de resultados CSV.')
+modo_datos = st.radio(
+    'Origen de los datos',
+    ['Datos de ejemplo (automaticos)', 'Cargar mis resultados (carpeta CSV)'],
+    horizontal=True,
+    key='modo_datos'
 )
-if not archivos_usuario:
-    st.info('Selecciona una carpeta para comenzar. Los CSV se procesan en memoria durante tu sesion y no se publican en el repositorio.')
-    st.stop()
-try:
-    tamanio = sum(f.size for f in archivos_usuario)
-    if tamanio > 80 * 1024 * 1024:
-        raise ValueError('La carpeta contiene mas de 80 MB en CSV; reduce el contenido para usar esta version publica.')
-    archivos_analisis, grupo_elegido = preparar_archivos_subidos(archivos_usuario)
-    df, meta, folds, dup, valid, fuentes = cargar(archivos_analisis)
-except Exception as exc:
-    st.error(f'No se pudieron cargar los CSV: {exc}')
-    st.stop()
+
+if modo_datos == 'Datos de ejemplo (automaticos)':
+    if not DEMO_ZIP.is_file():
+        st.error('No se encontro demo/Local_ejemplo.zip en el repositorio. Agrega el ZIP de ejemplo a GitHub.')
+        st.stop()
+    try:
+        df, meta, folds, dup, valid, fuentes, cantidad_archivos, tamanio_mb = cargar_ejemplo_zip(
+            str(DEMO_ZIP), DEMO_ZIP.stat().st_mtime_ns
+        )
+    except Exception as exc:
+        st.error(f'No se pudieron cargar los datos de ejemplo: {exc}')
+        st.stop()
+    st.info('Modo demostracion: conjunto de resultados de ejemplo. Esta carga no representa necesariamente los experimentos definitivos.')
+    st.caption(f'Datos de ejemplo · Local · {cantidad_archivos} CSV · {tamanio_mb:.2f} MB')
+else:
+    st.caption('Selecciona Local o Datos_Analisis_Interactivo. Se necesitan Maestros/Resultados_Globales_Por_Modelo.csv y Datasets/Tabla_Datasets.csv.')
+    archivos_usuario = st.file_uploader(
+        'Carpeta de resultados CSV', type=['csv'], accept_multiple_files='directory',
+        help='Si contiene Local y Colab se prioriza Local. Los CSV se procesan en memoria.',
+        key='carga_carpeta'
+    )
+    if not archivos_usuario:
+        st.info('Selecciona tu carpeta para analizar sus CSV. Puedes volver al modo de ejemplo cuando quieras.')
+        st.stop()
+    try:
+        tamanio = sum(f.size for f in archivos_usuario)
+        if tamanio > MAX_CSV_BYTES:
+            raise ValueError('La carpeta supera el limite de 80 MB en CSV.')
+        archivos_analisis, grupo_elegido = preparar_archivos_subidos(archivos_usuario)
+        df, meta, folds, dup, valid, fuentes = cargar(archivos_analisis)
+    except Exception as exc:
+        st.error(f'No se pudieron cargar los CSV: {exc}')
+        st.stop()
+    st.caption(f'Carpeta cargada · origen: {grupo_elegido} · {len(archivos_analisis)} archivos de analisis · {tamanio / 1024**2:.2f} MB de CSV seleccionados')
+
 if df.empty:
     st.error('El archivo global no tiene registros.')
     st.stop()
-st.caption(f'Carpeta cargada · origen: {grupo_elegido} · {len(archivos_analisis)} archivos de analisis · {tamanio / 1024**2:.2f} MB de CSV seleccionados')
 
 issues=calidad(df,meta,folds,dup,valid,fuentes)
 with st.expander(f'Calidad y trazabilidad · {len(issues)} observaciones',expanded=not dup.empty):
